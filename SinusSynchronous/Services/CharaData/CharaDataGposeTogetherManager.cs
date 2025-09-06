@@ -44,7 +44,7 @@ public class CharaDataGposeTogetherManager : DisposableMediatorSubscriberBase
         });
         Mediator.Subscribe<GPoseLobbyReceiveCharaData>(this, (msg) =>
         {
-            OnReceiveCharaData(msg.CharaDataDownloadDto);
+            OnReceiveCharaData(msg.ServerIndex, msg.CharaDataDownloadDto);
         });
         Mediator.Subscribe<GPoseLobbyReceivePoseData>(this, (msg) =>
         {
@@ -114,11 +114,12 @@ public class CharaDataGposeTogetherManager : DisposableMediatorSubscriberBase
             .Where(u => string.IsNullOrEmpty(u.FileSwapPath)).SelectMany(u => u.GamePaths, (file, path) => new GamePathEntry(file.Hash, path))];
             List<GamePathEntry> fileSwapPaths = [.. playerData.FileReplacements[API.Data.Enum.ObjectKind.Player]
             .Where(u => !string.IsNullOrEmpty(u.FileSwapPath)).SelectMany(u => u.GamePaths, (file, path) => new GamePathEntry(file.FileSwapPath, path))];
-            await _charaDataManager.UploadFiles([.. playerData.FileReplacements[API.Data.Enum.ObjectKind.Player]
+            await _charaDataManager.UploadFiles(serverIndex, [.. playerData.FileReplacements[API.Data.Enum.ObjectKind.Player]
             .Where(u => string.IsNullOrEmpty(u.FileSwapPath)).SelectMany(u => u.GamePaths, (file, path) => new GamePathEntry(file.Hash, path))])
                 .ConfigureAwait(false);
 
-            CharaDataDownloadDto charaDataDownloadDto = new($"GPOSELOBBY:{CurrentGPoseLobbyId}", new(_apiController.UID))
+            var uid = _apiController.GetUidByServer(serverIndex);
+            CharaDataDownloadDto charaDataDownloadDto = new($"GPOSELOBBY:{CurrentGPoseLobbyId}", new(uid))
             {
                 UpdatedDate = DateTime.UtcNow,
                 ManipulationData = playerData.ManipulationData,
@@ -599,7 +600,7 @@ public class CharaDataGposeTogetherManager : DisposableMediatorSubscriberBase
         }
     }
 
-    private void OnReceiveCharaData(CharaDataDownloadDto charaDataDownloadDto)
+    private void OnReceiveCharaData(int serverIndex, CharaDataDownloadDto charaDataDownloadDto)
     {
         if (!_usersInLobby.TryGetValue(charaDataDownloadDto.Uploader.UID, out var lobbyData))
         {
@@ -609,11 +610,11 @@ public class CharaDataGposeTogetherManager : DisposableMediatorSubscriberBase
         lobbyData.CharaData = charaDataDownloadDto;
         if (lobbyData.Address != nint.Zero && !string.IsNullOrEmpty(lobbyData.AssociatedCharaName))
         {
-            _ = ApplyCharaData(lobbyData);
+            _ = ApplyCharaData(serverIndex, lobbyData);
         }
     }
 
-    public async Task ApplyCharaData(GposeLobbyUserData userData)
+    public async Task ApplyCharaData(int serverIndex, GposeLobbyUserData userData)
     {
         if (userData.CharaData == null || userData.Address == nint.Zero || string.IsNullOrEmpty(userData.AssociatedCharaName))
             return;
@@ -622,7 +623,7 @@ public class CharaDataGposeTogetherManager : DisposableMediatorSubscriberBase
 
         try
         {
-            await _charaDataManager.ApplyCharaData(userData.CharaData!, userData.AssociatedCharaName).ConfigureAwait(false);
+            await _charaDataManager.ApplyCharaData(serverIndex, userData.CharaData!, userData.AssociatedCharaName).ConfigureAwait(false);
             userData.LastAppliedCharaDataDate = userData.CharaData.UpdatedDate;
             userData.HasPoseDataUpdate = true;
             userData.HasWorldDataUpdate = true;
@@ -635,7 +636,7 @@ public class CharaDataGposeTogetherManager : DisposableMediatorSubscriberBase
 
     private readonly SemaphoreSlim _charaDataSpawnSemaphore = new(1, 1);
 
-    internal async Task SpawnAndApplyData(GposeLobbyUserData userData)
+    internal async Task SpawnAndApplyData(int serverIndex, GposeLobbyUserData userData)
     {
         if (userData.CharaData == null)
             return;
@@ -645,7 +646,7 @@ public class CharaDataGposeTogetherManager : DisposableMediatorSubscriberBase
         {
             userData.HasPoseDataUpdate = false;
             userData.HasWorldDataUpdate = false;
-            var chara = await _charaDataManager.SpawnAndApplyData(userData.CharaData).ConfigureAwait(false);
+            var chara = await _charaDataManager.SpawnAndApplyData(serverIndex, userData.CharaData).ConfigureAwait(false);
             if (chara == null) return;
             userData.HandledChara = chara;
             userData.AssociatedCharaName = chara.Name;

@@ -1,19 +1,14 @@
 ﻿using Dalamud.Utility;
 using Microsoft.Extensions.Logging;
 using SinusSynchronous.API.Data;
-using SinusSynchronous.API.Data.Extensions;
 using SinusSynchronous.API.Dto;
-using SinusSynchronous.API.Dto.User;
-using SinusSynchronous.API.SignalR;
 using SinusSynchronous.PlayerData.Pairs;
 using SinusSynchronous.Services;
 using SinusSynchronous.Services.Mediator;
 using SinusSynchronous.Services.ServerConfiguration;
 using SinusSynchronous.SinusConfiguration;
-using SinusSynchronous.SinusConfiguration.Models;
 using SinusSynchronous.WebAPI.SignalR.Utils;
 using System.Collections.Concurrent;
-using System.Reflection;
 
 namespace SinusSynchronous.WebAPI;
 using ServerIndex = int;
@@ -52,53 +47,7 @@ public sealed partial class ApiController : DisposableMediatorSubscriberBase
         _loggerFactory = loggerFactory;
         _loggerProvider = loggerProvider;
 
-        // TODO
-        // Auto connect every server. Ideally in sequence, in an extra method
-        GetOrCreateForServer(_serverManager.CurrentServerIndex).DalamudUtilOnLogIn();
-    }
-
-    // TODO all in this region still needs to be reworked to not use current server
-    #region StillBasedOnCurrentServer
-    public DefaultPermissionsDto? DefaultPermissions => CurrentConnectionDto?.DefaultPreferredPermissions ?? null;
-
-    public string DisplayName => CurrentConnectionDto?.User.AliasOrUID ?? string.Empty;
-
-    public bool IsConnected => ServerState == ServerState.Connected;
-    
-    public bool ServerAlive => ServerState is ServerState.Connected or ServerState.RateLimited
-        or ServerState.Unauthorized or ServerState.Disconnected;
-    
-    public string AuthFailureMessage
-    {
-        get
-        {
-            return GetClientForServer(_serverManager.CurrentServerIndex)?.AuthFailureMessage ?? string.Empty;
-        }
-    }
-    
-    private ConnectionDto? CurrentConnectionDto
-    {
-        get
-        {
-            // For now, display for the one selected in drop-down. Later, we will have to do this per-server
-            return GetClientForServer(_serverManager.CurrentServerIndex)?.ConnectionDto;
-        }
-    }
-    
-    
-    public bool IsServerConnected(int index)
-    {
-        return GetClientForServer(index)?._serverState == ServerState.Connected;
-    }
-    
-    public ServerInfo ServerInfo => CurrentConnectionDto?.ServerInfo ?? new ServerInfo();
-
-    public ServerState ServerState
-    {
-        get
-        {
-            return GetClientForServer(_serverManager.CurrentServerIndex)?._serverState ?? ServerState.Offline;
-        }
+        AutoConnectClients();
     }
 
     public ServerState GetServerState(ServerIndex index)
@@ -106,10 +55,18 @@ public sealed partial class ApiController : DisposableMediatorSubscriberBase
         return GetClientForServer(index)?._serverState ?? ServerState.Offline;
     }
 
-    public string UID => CurrentConnectionDto?.User.UID ?? string.Empty;
+    public bool IsServerConnected(int index)
+    {
+        return GetClientForServer(index)?._serverState == ServerState.Connected;
+    }
 
-    #endregion
-
+    public bool IsServerAlive(int index)
+    {
+        var serverState = GetServerState(index);
+        return serverState is ServerState.Connected or ServerState.RateLimited
+            or ServerState.Unauthorized or ServerState.Disconnected;
+    }
+    
     public int OnlineUsers
     {
         get
@@ -120,6 +77,16 @@ public sealed partial class ApiController : DisposableMediatorSubscriberBase
     
     public int GetOnlineUsersForServer(ServerIndex index) {
         return GetClientForServer(index)?.SystemInfoDto?.OnlineUsers ?? 0;
+    }
+
+    public ServerInfo? GetServerInfoForServer(ServerIndex index)
+    {
+        return GetClientForServer(index)?.ConnectionDto?.ServerInfo;
+    }
+
+    public DefaultPermissionsDto? GetDefaultPermissionsForServer(ServerIndex index)
+    {
+        return GetClientForServer(index)?.ConnectionDto?.DefaultPreferredPermissions;
     }
 
     public ServerState GetServerStateForServer(ServerIndex index)
@@ -155,10 +122,25 @@ public sealed partial class ApiController : DisposableMediatorSubscriberBase
     {
         return GetClientForServer(serverIndex)?.ConnectionDto?.ServerInfo.MaxGroupsJoinedByUser ?? 0;
     }
+    
+    public int GetMaxGroupsCreatedByUser(ServerIndex serverIndex)
+    {
+        return GetClientForServer(serverIndex)?.ConnectionDto?.ServerInfo.MaxGroupsCreatedByUser ?? 0;
+    }
+    
+    public string? GetAuthFailureMessageByServer(ServerIndex serverIndex)
+    {
+        return GetClientForServer(serverIndex)?.AuthFailureMessage;
+    }
 
     public string GetUidByServer(ServerIndex serverIndex)
     {
         return GetClientForServer(serverIndex)?.UID ?? string.Empty;
+    }
+    
+    public string GetDisplayNameByServer(ServerIndex serverIndex)
+    {
+        return GetClientForServer(serverIndex)?.ConnectionDto?.User.AliasOrUID ?? string.Empty;
     }
 
     public async Task PauseConnectionAsync(ServerIndex serverIndex)
@@ -207,6 +189,22 @@ public sealed partial class ApiController : DisposableMediatorSubscriberBase
     private Task ConnectMultiClient(ServerIndex serverIndex)
     {
         return GetOrCreateForServer(serverIndex).CreateConnectionsAsync();
+    }
+
+    private void AutoConnectClients()
+    {
+        // Fire and forget the auto connect. if something goes wrong, it'll be displayed in UI
+        _ = Task.Run(async () =>
+        {
+            foreach (int serverIndex in _serverManager.ServerIndexes)
+            {
+                var server = _serverManager.GetServerByIndex(serverIndex);
+                if (!server.FullPause)
+                {
+                    await GetOrCreateForServer(serverIndex).DalamudUtilOnLogIn().ConfigureAwait(false);
+                }
+            }
+        });
     }
 
     protected override void Dispose(bool disposing)

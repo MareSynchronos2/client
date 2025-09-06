@@ -124,7 +124,7 @@ public class DrawUserPair
         string individualText = Environment.NewLine + Environment.NewLine + "Note: changing this permission will turn the permissions for this"
             + Environment.NewLine + "user to preferred permissions. You can change this behavior"
             + Environment.NewLine + "in the permission settings.";
-        bool individual = !_pair.IsDirectlyPaired && _apiController.DefaultPermissions!.IndividualIsSticky;
+        bool individual = !_pair.IsDirectlyPaired && _apiController.GetDefaultPermissionsForServer(_pair.ServerIndex)!.IndividualIsSticky;
 
         var isDisableSounds = _pair.UserPair!.OwnPermissions.IsDisableSounds();
         string disableSoundsText = isDisableSounds ? "Enable sound sync" : "Disable sound sync";
@@ -256,7 +256,7 @@ public class DrawUserPair
             userPairText += UiSharedService.TooltipSeparator + string.Join(Environment.NewLine,
                 _syncedGroups.Select(g =>
                 {
-                    var groupNote = _serverConfigurationManager.GetNoteForGid(g.GID);
+                    var groupNote = _serverConfigurationManager.GetNoteForGid(_pair.ServerIndex, g.GID);
                     var groupString = string.IsNullOrEmpty(groupNote) ? g.GroupAliasOrGID : $"{groupNote} ({g.GroupAliasOrGID})";
                     return "Paired through " + groupString;
                 }));
@@ -309,13 +309,14 @@ public class DrawUserPair
         if (_syncedGroups.Any()) ImGui.Separator();
         foreach (var entry in _syncedGroups)
         {
-            bool selfIsOwner = string.Equals(_apiController.UID, entry.Owner.UID, StringComparison.Ordinal);
+            var ownUid = _apiController.GetUidByServer(_pair.ServerIndex);
+            bool selfIsOwner = string.Equals(ownUid, entry.Owner.UID, StringComparison.Ordinal);
             bool selfIsModerator = entry.GroupUserInfo.IsModerator();
             bool userIsModerator = entry.GroupPairUserInfos.TryGetValue(_pair.UserData.UID, out var modinfo) && modinfo.IsModerator();
             bool userIsPinned = entry.GroupPairUserInfos.TryGetValue(_pair.UserData.UID, out var info) && info.IsPinned();
             if (selfIsOwner || selfIsModerator)
             {
-                var groupNote = _serverConfigurationManager.GetNoteForGid(entry.GID);
+                var groupNote = _serverConfigurationManager.GetNoteForGid(_pair.ServerIndex, entry.GID);
                 var groupString = string.IsNullOrEmpty(groupNote) ? entry.GroupAliasOrGID : $"{groupNote} ({entry.GroupAliasOrGID})";
 
                 if (ImGui.BeginMenu(groupString + " Moderation Functions"))

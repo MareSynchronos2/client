@@ -337,7 +337,7 @@ public class SettingsUi : WindowMediatorSubscriberBase
         if (!showUploading) ImGui.EndDisabled();
         if (!showTransferBars) ImGui.EndDisabled();
 
-        if (_apiController.IsConnected)
+        if (_apiController.AnyServerConnected)
         {
             ImGuiHelpers.ScaledDummy(5);
             ImGui.Separator();
@@ -350,7 +350,6 @@ public class SettingsUi : WindowMediatorSubscriberBase
                     if (_uiShared.IconTextButton(FontAwesomeIcon.GroupArrowsRotate, "Update Download Server List"))
                     {
                         // Speedtest is always done for current server
-                        // TODO change this?
                         _downloadServersTask = GetDownloadServerList(_serverConfigurationManager.CurrentServerIndex);
                     }
                 }
@@ -402,7 +401,7 @@ public class SettingsUi : WindowMediatorSubscriberBase
 
         if (ImGui.BeginTabBar("TransfersTabBar"))
         {
-            if (ApiController.ServerState is ServerState.Connected && ImGui.BeginTabItem("Transfers"))
+            if (ApiController.AnyServerConnected && ImGui.BeginTabItem("Transfers"))
             {
                 ImGui.TextUnformatted("Uploads");
                 if (ImGui.BeginTable("UploadsTable", 3))
@@ -848,7 +847,7 @@ public class SettingsUi : WindowMediatorSubscriberBase
         {
             _notesSuccessfullyApplied = null;
             var notes = ImGui.GetClipboardText();
-            _notesSuccessfullyApplied = _uiShared.ApplyNotesFromClipboard(notes, _overwriteExistingLabels);
+            _notesSuccessfullyApplied = _uiShared.ApplyNotesFromClipboard(_serverConfigurationManager.CurrentServerIndex, notes, _overwriteExistingLabels);
         }
 
         ImGui.SameLine();
@@ -1296,7 +1295,7 @@ public class SettingsUi : WindowMediatorSubscriberBase
     private void DrawServerConfiguration()
     {
         _lastTab = "Service Settings";
-        if (ApiController.ServerAlive)
+        if (ApiController.IsServerAlive(_serverConfigurationManager.CurrentServerIndex))
         {
             _uiShared.BigText("Service Actions");
             ImGuiHelpers.ScaledDummy(new Vector2(5, 5));
@@ -1358,7 +1357,6 @@ public class SettingsUi : WindowMediatorSubscriberBase
 
                 if (ImGui.Button("Delete account", new Vector2(buttonSize, 0)))
                 {
-                    // TODO for now, delete on selected server. Decide if we delete all or show a prompt
                     _ = Task.Run(() => ApiController.UserDelete(_serverConfigurationManager.CurrentServerIndex));
                     _deleteAccountPopupModalShown = false;
                     Mediator.Publish(new SwitchToIntroUiMessage());
@@ -1379,11 +1377,6 @@ public class SettingsUi : WindowMediatorSubscriberBase
 
         _uiShared.BigText("UI");
         ImGuiHelpers.ScaledDummy(new Vector2(5, 5));
-        //var showServerPickerInMainMenu = _serverConfigurationManager.ShowServerPickerInMainMenu;
-        //if (ImGui.Checkbox("Show Server Picker in Main Menu", ref showServerPickerInMainMenu))
-        //{
-        //    _serverConfigurationManager.ShowServerPickerInMainMenu = showServerPickerInMainMenu;
-        //}
 
         _uiShared.BigText("Service & Character Settings");
         ImGuiHelpers.ScaledDummy(new Vector2(5, 5));
@@ -1784,12 +1777,12 @@ public class SettingsUi : WindowMediatorSubscriberBase
             if (ImGui.BeginTabItem("Permission Settings"))
             {
                 _uiShared.BigText("Default Permission Settings");
-                if (selectedServer == _serverConfigurationManager.CurrentServer && _apiController.IsConnected)
+                if (selectedServer == _serverConfigurationManager.CurrentServer && _apiController.IsServerConnected(_serverConfigurationManager.CurrentServerIndex))
                 {
                     UiSharedService.TextWrapped("Note: The default permissions settings here are not applied retroactively to existing pairs or joined Syncshells.");
                     UiSharedService.TextWrapped("Note: The default permissions settings here are sent and stored on the connected service.");
                     ImGuiHelpers.ScaledDummy(5f);
-                    var perms = _apiController.DefaultPermissions!;
+                    var perms = _apiController.GetDefaultPermissionsForServer(_serverConfigurationManager.CurrentServerIndex)!;
                     bool individualIsSticky = perms.IndividualIsSticky;
                     bool disableIndividualSounds = perms.DisableIndividualSounds;
                     bool disableIndividualAnimations = perms.DisableIndividualAnimations;
@@ -1940,7 +1933,7 @@ public class SettingsUi : WindowMediatorSubscriberBase
 
     private void DrawSettingsContent()
     {
-        if (_apiController.ServerState is ServerState.Connected)
+        if (_apiController.IsServerConnected(_serverConfigurationManager.CurrentServerIndex))
         {
             ImGui.TextUnformatted("Service " + _serverConfigurationManager.CurrentServer!.ServerName + ":");
             ImGui.SameLine();
